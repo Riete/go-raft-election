@@ -22,6 +22,7 @@ type Config struct {
 	Port             int
 	TransportMaxPool int
 	TransportTimeout time.Duration
+	LogLevel         hclog.Level
 }
 
 func (c Config) BindAddr() string {
@@ -39,7 +40,7 @@ func (c Config) AdvertiseAddr() (net.Addr, error) {
 func (c Config) RaftConfig() *raft.Config {
 	config := raft.DefaultConfig()
 	config.LocalID = c.ServerId
-	config.LogLevel = hclog.Off.String()
+	config.LogLevel = c.LogLevel.String()
 	return config
 }
 
