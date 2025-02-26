@@ -39,7 +39,7 @@ func (c Config) AdvertiseAddr() (net.Addr, error) {
 func (c Config) RaftConfig() *raft.Config {
 	config := raft.DefaultConfig()
 	config.LocalID = c.ServerId
-	config.LogLevel = hclog.Error.String()
+	config.LogLevel = hclog.Off.String()
 	return config
 }
 

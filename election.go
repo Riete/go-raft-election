@@ -5,9 +5,11 @@ import (
 )
 
 type Candidate struct {
-	s *Store
-	c *Config
-	r *raft.Raft
+	s       *Store
+	c       *Config
+	r       *raft.Raft
+	promote chan struct{}
+	demote  chan struct{}
 }
 
 func (c *Candidate) Raft() *raft.Raft {
@@ -32,6 +34,15 @@ func (c *Candidate) init() error {
 		return err
 	}
 	c.r, err = raft.NewRaft(c.c.RaftConfig(), nil, c.s.Log, c.s.Stable, c.s.Snapshot, trans)
+	if err == nil {
+		go func() {
+			if <-c.r.LeaderCh() {
+				c.promote <- struct{}{}
+			} else {
+				c.demote <- struct{}{}
+			}
+		}()
+	}
 	return err
 }
 
@@ -47,15 +58,15 @@ func (c *Candidate) Leader() bool {
 	return c.r.State() == raft.Leader
 }
 
-func (c *Candidate) BecomeLeader() bool {
-	return <-c.r.LeaderCh()
+func (c *Candidate) BecomeLeader() chan struct{} {
+	return c.promote
 }
 
-func (c *Candidate) LoseLeader() bool {
-	return !c.BecomeLeader()
+func (c *Candidate) LoseLeader() chan struct{} {
+	return c.demote
 }
 
 func NewCandidate(s *Store, c *Config) (*Candidate, error) {
-	candidate := &Candidate{s: s, c: c}
+	candidate := &Candidate{s: s, c: c, promote: make(chan struct{}), demote: make(chan struct{})}
 	return candidate, candidate.init()
 }
