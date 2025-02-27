@@ -68,37 +68,25 @@ func (c *Candidate) Shutdown() raft.Future {
 }
 
 func (c *Candidate) Leader() bool {
-	return c.r.State() == raft.Leader
+	return c.r.VerifyLeader().Error() == nil
 }
 
 func (c *Candidate) State() raft.RaftState {
 	return c.r.State()
 }
 
-func (c *Candidate) OnPromote() chan struct{} {
-	return c.promote
-}
-
-func (c *Candidate) OnDemote() chan struct{} {
-	return c.demote
-}
-
-func (c *Candidate) OnNewLeader() chan raft.ServerAddress {
-	return c.newLeader
-}
-
 func (c *Candidate) RunEventLoop(handler EventHandler) {
 	for {
 		select {
-		case <-c.OnPromote():
+		case <-c.promote:
 			if handler.OnPromote != nil {
 				handler.OnPromote()
 			}
-		case <-c.OnDemote():
+		case <-c.demote:
 			if handler.OnDemote != nil {
 				handler.OnDemote()
 			}
-		case newLeader := <-c.OnNewLeader():
+		case newLeader := <-c.newLeader:
 			if handler.OnNewLeader != nil {
 				handler.OnNewLeader(newLeader)
 			}

@@ -13,9 +13,9 @@ var (
 	c1        = &Config{ServerId: "c1", AdvertiseHostPort: "c1:4401", ListenPort: 4401, LogLevel: hclog.Off}
 	c2        = &Config{ServerId: "c2", AdvertiseHostPort: "c2:4402", ListenPort: 4402, LogLevel: hclog.Off}
 	c3        = &Config{ServerId: "c3", AdvertiseHostPort: "c3:4403", ListenPort: 4403, LogLevel: hclog.Off}
-	onPromote = func(c *Config) func() {
+	onPromote = func(conf *Config, c *Candidate) func() {
 		return func() {
-			log.Println(c.ServerId, "become leader")
+			log.Println(conf.ServerId, "become leader", c.Leader())
 		}
 	}
 	onDemote = func(c *Config) func() {
@@ -38,7 +38,7 @@ func TestCandidate_C1(t *testing.T) {
 	}
 	c.BootstrapCluster()
 	c.RunEventLoop(EventHandler{
-		OnPromote:   onPromote(c1),
+		OnPromote:   onPromote(c1, c),
 		OnDemote:    onDemote(c1),
 		OnNewLeader: onNewLeader(c1),
 	})
@@ -52,7 +52,7 @@ func TestCandidate_C2(t *testing.T) {
 	}
 	c.BootstrapCluster()
 	c.RunEventLoop(EventHandler{
-		OnPromote:   onPromote(c2),
+		OnPromote:   onPromote(c2, c),
 		OnDemote:    onDemote(c2),
 		OnNewLeader: onNewLeader(c2),
 	})
@@ -67,7 +67,7 @@ func TestCandidate_C3(t *testing.T) {
 	}
 	c.BootstrapCluster()
 	c.RunEventLoop(EventHandler{
-		OnPromote:   onPromote(c3),
+		OnPromote:   onPromote(c3, c),
 		OnDemote:    onDemote(c3),
 		OnNewLeader: onNewLeader(c3),
 	})
