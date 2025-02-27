@@ -1,15 +1,18 @@
 package election
 
 import (
+	"time"
+
 	"github.com/hashicorp/raft"
 )
 
 type Candidate struct {
-	s       *Store
-	c       *Config
-	r       *raft.Raft
-	promote chan struct{}
-	demote  chan struct{}
+	s         *Store
+	c         *Config
+	r         *raft.Raft
+	promote   chan struct{}
+	demote    chan struct{}
+	newLeader chan raft.ServerAddress
 }
 
 func (c *Candidate) Raft() *raft.Raft {
@@ -33,13 +36,16 @@ func (c *Candidate) init() error {
 	if err != nil {
 		return err
 	}
-	c.r, err = raft.NewRaft(c.c.RaftConfig(), nil, c.s.Log, c.s.Stable, c.s.Snapshot, trans)
+	c.r, err = raft.NewRaft(c.c.RaftConfig(), NewLeaderTracker(c.newLeader), c.s.Log, c.s.Stable, c.s.Snapshot, trans)
 	if err == nil {
 		go func() {
-			if <-c.r.LeaderCh() {
-				c.promote <- struct{}{}
-			} else {
-				c.demote <- struct{}{}
+			for {
+				if <-c.r.LeaderCh() {
+					c.promote <- struct{}{}
+					c.r.Apply([]byte(c.c.ServerAddress()), time.Second)
+				} else {
+					c.demote <- struct{}{}
+				}
 			}
 		}()
 	}
@@ -58,6 +64,10 @@ func (c *Candidate) Leader() bool {
 	return c.r.State() == raft.Leader
 }
 
+func (c *Candidate) State() raft.RaftState {
+	return c.r.State()
+}
+
 func (c *Candidate) BecomeLeader() chan struct{} {
 	return c.promote
 }
@@ -66,7 +76,17 @@ func (c *Candidate) LoseLeader() chan struct{} {
 	return c.demote
 }
 
+func (c *Candidate) OnNewLeader() chan raft.ServerAddress {
+	return c.newLeader
+}
+
 func NewCandidate(s *Store, c *Config) (*Candidate, error) {
-	candidate := &Candidate{s: s, c: c, promote: make(chan struct{}), demote: make(chan struct{})}
+	candidate := &Candidate{
+		s:         s,
+		c:         c,
+		promote:   make(chan struct{}),
+		demote:    make(chan struct{}),
+		newLeader: make(chan raft.ServerAddress),
+	}
 	return candidate, candidate.init()
 }
