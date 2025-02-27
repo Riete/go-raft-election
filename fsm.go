@@ -1,41 +1,37 @@
 package election
 
 import (
-	"context"
 	"io"
+	"sync/atomic"
 	"time"
 
 	"github.com/hashicorp/raft"
 )
 
 type LeaderTracker struct {
-	leaderAddr   raft.ServerAddress
-	newLeader    chan raft.ServerAddress
-	cancelNotify context.CancelFunc
+	newLeader  chan raft.ServerAddress
+	notifyWait *time.Ticker
+	notifying  *atomic.Bool
+	leaderNow  *atomic.Pointer[raft.ServerAddress]
 }
 
-func (l *LeaderTracker) notifyLatest(newLeader raft.ServerAddress) context.CancelFunc {
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(time.Second):
-			l.newLeader <- newLeader
-		}
-	}()
-	return cancel
+func (l *LeaderTracker) notify() {
+	<-l.notifyWait.C
+	l.notifying.Store(false)
+	l.notifyWait.Stop()
+	l.newLeader <- *l.leaderNow.Load()
 }
 
 func (l *LeaderTracker) Apply(log *raft.Log) interface{} {
-	newLeader := raft.ServerAddress(log.Data)
-	if l.leaderAddr != newLeader {
-		if l.cancelNotify != nil {
-			l.cancelNotify()
-		}
-		l.cancelNotify = l.notifyLatest(newLeader)
+	leaderNow := raft.ServerAddress(log.Data)
+	l.leaderNow.Store(&leaderNow)
+	if !l.notifying.Load() {
+		l.notifying.Store(true)
+		l.notifyWait = time.NewTicker(time.Second)
+		go l.notify()
+	} else {
+		l.notifyWait.Reset(time.Second)
 	}
-	l.leaderAddr = newLeader
 	return nil
 }
 
@@ -48,5 +44,9 @@ func (l *LeaderTracker) Restore(snapshot io.ReadCloser) error {
 }
 
 func NewLeaderTracker(newLeader chan raft.ServerAddress) raft.FSM {
-	return &LeaderTracker{newLeader: newLeader}
+	return &LeaderTracker{
+		newLeader: newLeader,
+		notifying: new(atomic.Bool),
+		leaderNow: new(atomic.Pointer[raft.ServerAddress]),
+	}
 }
