@@ -35,7 +35,7 @@ func (l *LeaderTracker) Apply(log *raft.Log) interface{} {
 		}
 		l.cancelNotify = l.notifyLatest(newLeader)
 	}
-	l.leaderAddr = raft.ServerAddress(log.Data)
+	l.leaderAddr = newLeader
 	return nil
 }
 

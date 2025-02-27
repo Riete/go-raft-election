@@ -18,30 +18,34 @@ type Members map[raft.ServerID]raft.ServerAddress
 
 type Config struct {
 	ServerId          raft.ServerID
+	BindIp            string
 	ListenPort        int
-	AdvertiseHostPort string
+	AdvertiseHostPort raft.ServerAddress
 	TransportMaxPool  int
 	TransportTimeout  time.Duration
 	LogLevel          hclog.Level
 }
 
 func (c Config) BindAddr() string {
-	return fmt.Sprintf(":%d", c.ListenPort)
+	return fmt.Sprintf("%s:%d", c.BindIp, c.ListenPort)
 }
 
 func (c Config) ServerAddress() raft.ServerAddress {
 	return raft.ServerAddress(c.BindAddr())
 }
 
-func (c Config) AdvertiseAddress() string {
+func (c Config) AdvertiseAddress() raft.ServerAddress {
 	if c.AdvertiseHostPort == "" {
-		return fmt.Sprintf("127.0.0.1:%d", c.ListenPort)
+		if c.BindIp == "" {
+			return raft.ServerAddress(fmt.Sprintf("127.0.0.1:%d", c.ListenPort))
+		}
+		return c.ServerAddress()
 	}
 	return c.AdvertiseHostPort
 }
 
 func (c Config) AdvertiseAddr() (net.Addr, error) {
-	return net.ResolveTCPAddr("tcp", c.AdvertiseAddress())
+	return net.ResolveTCPAddr("tcp", string(c.AdvertiseAddress()))
 }
 
 func (c Config) RaftConfig() *raft.Config {

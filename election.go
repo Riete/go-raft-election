@@ -42,7 +42,7 @@ func (c *Candidate) init() error {
 			for {
 				if <-c.r.LeaderCh() {
 					c.promote <- struct{}{}
-					c.r.Apply([]byte(c.c.ServerAddress()), time.Second)
+					c.r.Apply([]byte(c.c.AdvertiseAddress()), time.Second)
 				} else {
 					c.demote <- struct{}{}
 				}
