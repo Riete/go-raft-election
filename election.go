@@ -6,6 +6,12 @@ import (
 	"github.com/hashicorp/raft"
 )
 
+type EventHandler struct {
+	OnPromote   func()
+	OnDemote    func()
+	OnNewLeader func(raft.ServerAddress)
+}
+
 type Candidate struct {
 	s           *Store
 	c           *Config
@@ -69,16 +75,35 @@ func (c *Candidate) State() raft.RaftState {
 	return c.r.State()
 }
 
-func (c *Candidate) BecomeLeader() chan struct{} {
+func (c *Candidate) OnPromote() chan struct{} {
 	return c.promote
 }
 
-func (c *Candidate) LoseLeader() chan struct{} {
+func (c *Candidate) OnDemote() chan struct{} {
 	return c.demote
 }
 
 func (c *Candidate) OnNewLeader() chan raft.ServerAddress {
 	return c.newLeader
+}
+
+func (c *Candidate) RunEventLoop(handler EventHandler) {
+	for {
+		select {
+		case <-c.OnPromote():
+			if handler.OnPromote != nil {
+				handler.OnPromote()
+			}
+		case <-c.OnDemote():
+			if handler.OnDemote != nil {
+				handler.OnDemote()
+			}
+		case newLeader := <-c.OnNewLeader():
+			if handler.OnNewLeader != nil {
+				handler.OnNewLeader(newLeader)
+			}
+		}
+	}
 }
 
 func NewCandidate(s *Store, c *Config, peersConfig ...*Config) (*Candidate, error) {
