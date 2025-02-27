@@ -2,6 +2,7 @@ package election
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"time"
 
@@ -14,8 +15,6 @@ const (
 	TransportDefaultTimeout = 5 * time.Second
 )
 
-type Members map[raft.ServerID]raft.ServerAddress
-
 type Config struct {
 	ServerId          raft.ServerID
 	BindIp            string
@@ -24,6 +23,7 @@ type Config struct {
 	TransportMaxPool  int
 	TransportTimeout  time.Duration
 	LogLevel          hclog.Level
+	LogWriter         io.Writer
 }
 
 func (c Config) BindAddr() string {
@@ -52,13 +52,19 @@ func (c Config) RaftConfig() *raft.Config {
 	config := raft.DefaultConfig()
 	config.LocalID = c.ServerId
 	config.LogLevel = c.LogLevel.String()
+	config.LogOutput = c.LogWriter
 	return config
 }
 
-func (c Config) ClusterMembersConfig(members Members) raft.Configuration {
-	var config raft.Configuration
-	for serverId, serverAddr := range members {
-		config.Servers = append(config.Servers, raft.Server{ID: serverId, Address: serverAddr})
+func MembersConfig(configs []*Config) raft.Configuration {
+	var membersConfig raft.Configuration
+	for _, config := range configs {
+		membersConfig.Servers = append(
+			membersConfig.Servers,
+			raft.Server{
+				ID:      config.ServerId,
+				Address: config.AdvertiseAddress(),
+			})
 	}
-	return config
+	return membersConfig
 }

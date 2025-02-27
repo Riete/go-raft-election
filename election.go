@@ -7,12 +7,13 @@ import (
 )
 
 type Candidate struct {
-	s         *Store
-	c         *Config
-	r         *raft.Raft
-	promote   chan struct{}
-	demote    chan struct{}
-	newLeader chan raft.ServerAddress
+	s           *Store
+	c           *Config
+	r           *raft.Raft
+	peersConfig []*Config
+	promote     chan struct{}
+	demote      chan struct{}
+	newLeader   chan raft.ServerAddress
 }
 
 func (c *Candidate) Raft() *raft.Raft {
@@ -32,7 +33,7 @@ func (c *Candidate) init() error {
 	if timeout == 0 {
 		timeout = TransportDefaultTimeout
 	}
-	trans, err := raft.NewTCPTransport(c.c.BindAddr(), advertiseAddr, maxPool, timeout, nil)
+	trans, err := raft.NewTCPTransport(c.c.BindAddr(), advertiseAddr, maxPool, timeout, c.c.LogWriter)
 	if err != nil {
 		return err
 	}
@@ -52,8 +53,8 @@ func (c *Candidate) init() error {
 	return err
 }
 
-func (c *Candidate) BootstrapCluster(members Members) {
-	c.r.BootstrapCluster(c.c.ClusterMembersConfig(members))
+func (c *Candidate) BootstrapCluster() {
+	c.r.BootstrapCluster(MembersConfig(append(c.peersConfig, c.c)))
 }
 
 func (c *Candidate) Shutdown() raft.Future {
@@ -80,13 +81,14 @@ func (c *Candidate) OnNewLeader() chan raft.ServerAddress {
 	return c.newLeader
 }
 
-func NewCandidate(s *Store, c *Config) (*Candidate, error) {
+func NewCandidate(s *Store, c *Config, peersConfig ...*Config) (*Candidate, error) {
 	candidate := &Candidate{
-		s:         s,
-		c:         c,
-		promote:   make(chan struct{}),
-		demote:    make(chan struct{}),
-		newLeader: make(chan raft.ServerAddress),
+		s:           s,
+		c:           c,
+		promote:     make(chan struct{}),
+		demote:      make(chan struct{}),
+		newLeader:   make(chan raft.ServerAddress),
+		peersConfig: peersConfig,
 	}
 	return candidate, candidate.init()
 }
