@@ -52,8 +52,8 @@ func NewMemoryStore() *Store {
 func NewFileStore(base string, retain int) (*Store, error) {
 	var err error
 	s := &Store{base: base, retain: retain}
+	err = createStore(s.createSnapshotStore, err)
 	err = createStore(s.createLogStore, err)
 	err = createStore(s.createStableStore, err)
-	err = createStore(s.createSnapshotStore, err)
 	return s, err
 }
