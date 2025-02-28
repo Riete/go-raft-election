@@ -26,12 +26,12 @@ type Config struct {
 	LogWriter         io.Writer
 }
 
-func (c Config) BindAddr() string {
+func (c Config) BindAddress() string {
 	return fmt.Sprintf("%s:%d", c.BindIp, c.ListenPort)
 }
 
 func (c Config) ServerAddress() raft.ServerAddress {
-	return raft.ServerAddress(c.BindAddr())
+	return raft.ServerAddress(c.BindAddress())
 }
 
 func (c Config) AdvertiseAddress() raft.ServerAddress {

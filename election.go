@@ -1,6 +1,7 @@
 package election
 
 import (
+	"context"
 	"time"
 
 	"github.com/hashicorp/raft"
@@ -20,13 +21,14 @@ type Candidate struct {
 	promote     chan struct{}
 	demote      chan struct{}
 	newLeader   chan raft.ServerAddress
+	shutdown    context.CancelFunc
 }
 
 func (c *Candidate) Raft() *raft.Raft {
 	return c.r
 }
 
-func (c *Candidate) init() error {
+func (c *Candidate) init(ctx context.Context) error {
 	advertiseAddr, err := c.c.AdvertiseAddr()
 	if err != nil {
 		return err
@@ -39,7 +41,7 @@ func (c *Candidate) init() error {
 	if timeout == 0 {
 		timeout = TransportDefaultTimeout
 	}
-	trans, err := raft.NewTCPTransport(c.c.BindAddr(), advertiseAddr, maxPool, timeout, c.c.LogWriter)
+	trans, err := raft.NewTCPTransport(c.c.BindAddress(), advertiseAddr, maxPool, timeout, c.c.LogWriter)
 	if err != nil {
 		return err
 	}
@@ -47,11 +49,16 @@ func (c *Candidate) init() error {
 	if err == nil {
 		go func() {
 			for {
-				if <-c.r.LeaderCh() {
-					c.promote <- struct{}{}
-					c.r.Apply([]byte(c.c.AdvertiseAddress()), time.Second)
-				} else {
-					c.demote <- struct{}{}
+				select {
+				case becomeLeader := <-c.r.LeaderCh():
+					if becomeLeader {
+						c.promote <- struct{}{}
+						c.r.Apply([]byte(c.c.AdvertiseAddress()), time.Second)
+					} else {
+						c.demote <- struct{}{}
+					}
+				case <-ctx.Done():
+					return
 				}
 			}
 		}()
@@ -59,12 +66,23 @@ func (c *Candidate) init() error {
 	return err
 }
 
-func (c *Candidate) BootstrapCluster() {
+func (c *Candidate) bootstrapCluster() {
 	c.r.BootstrapCluster(MembersConfig(append(c.peersConfig, c.c)))
 }
 
-func (c *Candidate) Shutdown() raft.Future {
-	return c.r.Shutdown()
+func (c *Candidate) Start() error {
+	var ctx context.Context
+	ctx, c.shutdown = context.WithCancel(context.Background())
+	if err := c.init(ctx); err != nil {
+		return err
+	}
+	c.bootstrapCluster()
+	return nil
+}
+
+func (c *Candidate) Shutdown() error {
+	c.shutdown()
+	return c.r.Shutdown().Error()
 }
 
 func (c *Candidate) Leader() bool {
@@ -75,7 +93,7 @@ func (c *Candidate) State() raft.RaftState {
 	return c.r.State()
 }
 
-func (c *Candidate) RunEventLoop(handler EventHandler) {
+func (c *Candidate) RunEventLoop(ctx context.Context, handler EventHandler) {
 	for {
 		select {
 		case <-c.promote:
@@ -90,12 +108,14 @@ func (c *Candidate) RunEventLoop(handler EventHandler) {
 			if handler.OnNewLeader != nil {
 				handler.OnNewLeader(newLeader)
 			}
+		case <-ctx.Done():
+			return
 		}
 	}
 }
 
-func NewCandidate(s *Store, c *Config, peersConfig ...*Config) (*Candidate, error) {
-	candidate := &Candidate{
+func NewCandidate(s *Store, c *Config, peersConfig ...*Config) *Candidate {
+	return &Candidate{
 		s:           s,
 		c:           c,
 		promote:     make(chan struct{}),
@@ -103,5 +123,4 @@ func NewCandidate(s *Store, c *Config, peersConfig ...*Config) (*Candidate, erro
 		newLeader:   make(chan raft.ServerAddress),
 		peersConfig: peersConfig,
 	}
-	return candidate, candidate.init()
 }
