@@ -2,6 +2,7 @@ package election
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"testing"
 	"time"
@@ -39,6 +40,13 @@ func TestCandidate_C1(t *testing.T) {
 		t.Error(err)
 		return
 	}
+	watcherId, ch := c.RegisterWatcher()
+	defer c.DeregisterWatcher(watcherId)
+	go func() {
+		for i := range ch {
+			fmt.Println(i)
+		}
+	}()
 	c.RunEventLoop(context.Background(), EventHandler{
 		OnPromote:   onPromote(c1, c),
 		OnDemote:    onDemote(c1),
@@ -79,4 +87,11 @@ func TestCandidate_C3(t *testing.T) {
 		OnDemote:    onDemote(c3),
 		OnNewLeader: onNewLeader(c3),
 	})
+}
+
+func TestPeersConfig(t *testing.T) {
+	c := NewCandidate(NewMemoryStore(), c3, c1, c2)
+	for _, p := range c.Peers() {
+		t.Log(p.ID, p.Address)
+	}
 }

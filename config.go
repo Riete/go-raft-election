@@ -56,15 +56,15 @@ func (c Config) RaftConfig() *raft.Config {
 	return config
 }
 
-func MembersConfig(configs []*Config) raft.Configuration {
-	var membersConfig raft.Configuration
+func PeersConfig(configs []*Config) raft.Configuration {
+	var peersConfig raft.Configuration
 	for _, config := range configs {
-		membersConfig.Servers = append(
-			membersConfig.Servers,
+		peersConfig.Servers = append(
+			peersConfig.Servers,
 			raft.Server{
 				ID:      config.ServerId,
 				Address: config.AdvertiseAddress(),
 			})
 	}
-	return membersConfig
+	return peersConfig
 }
