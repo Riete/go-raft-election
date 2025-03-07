@@ -13,6 +13,7 @@ import (
 const (
 	TransportDefaultMaxPool = 5
 	TransportDefaultTimeout = 5 * time.Second
+	DefaultLogLevel         = hclog.Error
 )
 
 type Config struct {
@@ -24,6 +25,18 @@ type Config struct {
 	TransportTimeout  time.Duration
 	LogLevel          hclog.Level
 	LogWriter         io.Writer
+}
+
+func (c *Config) SetDefault() {
+	if c.TransportMaxPool == 0 {
+		c.TransportMaxPool = TransportDefaultMaxPool
+	}
+	if c.TransportTimeout == 0 {
+		c.TransportTimeout = TransportDefaultTimeout
+	}
+	if c.LogLevel == hclog.NoLevel {
+		c.LogLevel = DefaultLogLevel
+	}
 }
 
 func (c Config) BindAddress() string {

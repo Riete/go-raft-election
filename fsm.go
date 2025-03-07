@@ -15,31 +15,31 @@ type LeaderTracker struct {
 	notifyWait *time.Ticker
 	notifying  *atomic.Bool
 	leaderNow  *atomic.Pointer[raft.ServerAddress]
-	watcher    map[int64]chan raft.ServerAddress
+	receiver   map[int64]chan raft.ServerAddress
 }
 
-func (l *LeaderTracker) RegisterWatcher() (int64, chan raft.ServerAddress) {
+func (l *LeaderTracker) newReceiver() (int64, chan raft.ServerAddress) {
 	l.rw.Lock()
 	defer l.rw.Unlock()
-	watcherId := time.Now().UnixNano()
+	receiverId := time.Now().UnixNano()
 	ch := make(chan raft.ServerAddress)
-	l.watcher[watcherId] = ch
-	return watcherId, ch
+	l.receiver[receiverId] = ch
+	return receiverId, ch
 }
 
-func (l *LeaderTracker) DeregisterWatcher(watcherId int64) {
+func (l *LeaderTracker) removeReceiver(receiverId int64) {
 	l.rw.Lock()
 	defer l.rw.Unlock()
-	if ch, ok := l.watcher[watcherId]; ok {
+	if ch, ok := l.receiver[receiverId]; ok {
 		close(ch)
-		delete(l.watcher, watcherId)
+		delete(l.receiver, receiverId)
 	}
 }
 
-func (l *LeaderTracker) notifyWatcher(leaderAddress raft.ServerAddress) {
+func (l *LeaderTracker) notifyReceiver(leaderAddress raft.ServerAddress) {
 	l.rw.RLock()
 	defer l.rw.RUnlock()
-	for _, ch := range l.watcher {
+	for _, ch := range l.receiver {
 		go func(ch chan raft.ServerAddress) {
 			ch <- leaderAddress
 		}(ch)
@@ -55,7 +55,7 @@ func (l *LeaderTracker) notify() {
 	l.notifying.Store(false)
 	l.notifyWait.Stop()
 	leaderAddress := *l.leaderNow.Load()
-	go l.notifyWatcher(leaderAddress)
+	go l.notifyReceiver(leaderAddress)
 	go l.notifyCandidate(leaderAddress)
 }
 
@@ -85,6 +85,6 @@ func NewLeaderTracker(newLeader chan raft.ServerAddress) *LeaderTracker {
 		newLeader: newLeader,
 		notifying: new(atomic.Bool),
 		leaderNow: new(atomic.Pointer[raft.ServerAddress]),
-		watcher:   make(map[int64]chan raft.ServerAddress),
+		receiver:  make(map[int64]chan raft.ServerAddress),
 	}
 }
