@@ -3,6 +3,7 @@ package election
 import (
 	"context"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/raft"
@@ -19,6 +20,7 @@ type Candidate struct {
 	c           *Config
 	r           *raft.Raft
 	fsm         *LeaderTracker
+	mu          sync.Mutex
 	peersConfig raft.Configuration
 	promote     chan struct{}
 	demote      chan struct{}
@@ -69,13 +71,21 @@ func (c *Candidate) init(ctx context.Context) error {
 }
 
 func (c *Candidate) bootstrapCluster() {
-	c.r.BootstrapCluster(c.peersConfig)
+	_ = c.r.BootstrapCluster(c.peersConfig).Error()
+}
+
+func (c *Candidate) start() error {
+	var ctx context.Context
+	ctx, c.shutdown = context.WithCancel(context.Background())
+	return c.init(ctx)
 }
 
 func (c *Candidate) Start() error {
-	var ctx context.Context
-	ctx, c.shutdown = context.WithCancel(context.Background())
-	if err := c.init(ctx); err != nil {
+	return c.start()
+}
+
+func (c *Candidate) StartCluster() error {
+	if err := c.start(); err != nil {
 		return err
 	}
 	c.bootstrapCluster()
@@ -125,14 +135,19 @@ func (c *Candidate) DeregisterWatcher(watcherId int64) {
 }
 
 func (c *Candidate) Peers() []raft.Server {
-	servers := c.peersConfig.Servers
-	slices.SortStableFunc(servers, func(s1, s2 raft.Server) int {
+	config := c.r.GetConfiguration()
+	if config.Error() != nil {
+		return nil
+	}
+	runtimeConfig := config.Configuration()
+	c.peersConfig = runtimeConfig.Clone()
+	slices.SortStableFunc(c.peersConfig.Servers, func(s1, s2 raft.Server) int {
 		if s1.ID > s2.ID {
 			return 1
 		}
 		return -1
 	})
-	return servers
+	return c.peersConfig.Servers
 }
 
 func (c *Candidate) LFPeers() (leader raft.Server, followers []raft.Server) {
@@ -145,6 +160,38 @@ func (c *Candidate) LFPeers() (leader raft.Server, followers []raft.Server) {
 		}
 	}
 	return
+}
+
+func (c *Candidate) AddPeer(config *Config) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.r.AddVoter(config.ServerId, config.AdvertiseAddress(), 0, 0).Error()
+}
+
+func (c *Candidate) AddPeers(configs ...*Config) map[*Config]error {
+	failed := make(map[*Config]error)
+	for _, config := range configs {
+		if err := c.AddPeer(config); err != nil {
+			failed[config] = err
+		}
+	}
+	return failed
+}
+
+func (c *Candidate) RemovePeer(config *Config) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.r.RemoveServer(config.ServerId, 0, 0).Error()
+}
+
+func (c *Candidate) RemovePeers(configs ...*Config) map[*Config]error {
+	failed := make(map[*Config]error)
+	for _, config := range configs {
+		if err := c.RemovePeer(config); err != nil {
+			failed[config] = err
+		}
+	}
+	return failed
 }
 
 func NewCandidate(s *Store, c *Config, peersConfig ...*Config) *Candidate {

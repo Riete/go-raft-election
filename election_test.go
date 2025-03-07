@@ -35,7 +35,7 @@ var (
 
 func TestCandidate_C1(t *testing.T) {
 	c := NewCandidate(NewMemoryStore(), c1, c2, c3)
-	err := c.Start()
+	err := c.StartCluster()
 	if err != nil {
 		t.Error(err)
 		return
@@ -55,7 +55,7 @@ func TestCandidate_C1(t *testing.T) {
 }
 
 func TestCandidate_C2(t *testing.T) {
-	c := NewCandidate(NewMemoryStore(), c2, c1, c3)
+	c := NewCandidate(NewMemoryStore(), c2)
 	err := c.Start()
 	if err != nil {
 		t.Error(err)
@@ -69,7 +69,7 @@ func TestCandidate_C2(t *testing.T) {
 }
 
 func TestCandidate_C3(t *testing.T) {
-	c := NewCandidate(NewMemoryStore(), c3, c1, c2)
+	c := NewCandidate(NewMemoryStore(), c3)
 	err := c.Start()
 	if err != nil {
 		t.Error(err)
@@ -91,6 +91,11 @@ func TestCandidate_C3(t *testing.T) {
 
 func TestPeersConfig(t *testing.T) {
 	c := NewCandidate(NewMemoryStore(), c3, c1, c2)
+	err := c.StartCluster()
+	if err != nil {
+		t.Error(err)
+		return
+	}
 	for _, p := range c.Peers() {
 		t.Log(p.ID, p.Address)
 	}
