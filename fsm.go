@@ -39,8 +39,13 @@ func (l *LeaderTracker) removeReceiver(receiverId int64) {
 func (l *LeaderTracker) notifyReceiver(leaderAddress raft.ServerAddress) {
 	l.rw.RLock()
 	defer l.rw.RUnlock()
+
 	for _, ch := range l.receiver {
 		go func(ch chan raft.ServerAddress) {
+			// ignore send on closed channel panic error
+			defer func() {
+				_ = recover()
+			}()
 			ch <- leaderAddress
 		}(ch)
 	}
