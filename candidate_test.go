@@ -1,8 +1,6 @@
 package election
 
 import (
-	"context"
-	"fmt"
 	"log"
 	"testing"
 	"time"
@@ -47,33 +45,51 @@ var (
 
 func TestCandidate_Startup1(t *testing.T) {
 	c := startCandidate(c1, false)
-	c.RunEventLoop(context.Background(), EventHandler{
+	_ = c.RegisterEventHandler(EventHandler{
 		OnPromote:   onPromote(c1, c),
 		OnDemote:    onDemote(c1, c),
 		OnNewLeader: onNewLeader(c1, c),
 	})
+	time.Sleep(time.Hour)
 }
 
 func TestCandidate_Startup2(t *testing.T) {
 	c := startCandidate(c2, false)
-	c.RunEventLoop(context.Background(), EventHandler{
+	_ = c.RegisterEventHandler(EventHandler{
 		OnPromote:   onPromote(c2, c),
 		OnDemote:    onDemote(c2, c),
 		OnNewLeader: onNewLeader(c2, c),
 	})
+	time.Sleep(time.Hour)
 }
 
-func TestCandidate_BootstrapCluster(t *testing.T) {
-	c := startCandidate(c3, true, c1, c2)
-	c.RunEventLoop(context.Background(), EventHandler{
+func TestCandidate_Startup3(t *testing.T) {
+	c := startCandidate(c3, false)
+	_ = c.RegisterEventHandler(EventHandler{
 		OnPromote:   onPromote(c3, c),
 		OnDemote:    onDemote(c3, c),
 		OnNewLeader: onNewLeader(c3, c),
 	})
+	time.Sleep(time.Hour)
+}
+
+func TestCandidate_BootstrapCluster(t *testing.T) {
+	c := startCandidate(c3, true, c1, c2)
+	_ = c.RegisterEventHandler(EventHandler{
+		OnPromote:   onPromote(c3, c),
+		OnDemote:    onDemote(c3, c),
+		OnNewLeader: onNewLeader(c3, c),
+	})
+	time.Sleep(time.Hour)
 }
 
 func TestCandidate_AddMember(t *testing.T) {
 	c := startCandidate(c3, true)
+	_ = c.RegisterEventHandler(EventHandler{
+		OnPromote:   onPromote(c3, c),
+		OnDemote:    onDemote(c3, c),
+		OnNewLeader: onNewLeader(c3, c),
+	})
 	go func() {
 		for {
 			if c.Leader() {
@@ -83,15 +99,16 @@ func TestCandidate_AddMember(t *testing.T) {
 			}
 		}
 	}()
-	c.RunEventLoop(context.Background(), EventHandler{
-		OnPromote:   onPromote(c3, c),
-		OnDemote:    onDemote(c3, c),
-		OnNewLeader: onNewLeader(c3, c),
-	})
+	time.Sleep(time.Hour)
 }
 
 func TestCandidate_RemoveMember(t *testing.T) {
 	c := startCandidate(c3, true, c1, c2)
+	_ = c.RegisterEventHandler(EventHandler{
+		OnPromote:   onPromote(c3, c),
+		OnDemote:    onDemote(c3, c),
+		OnNewLeader: onNewLeader(c3, c),
+	})
 	go func() {
 		for {
 			if c.Leader() {
@@ -101,46 +118,21 @@ func TestCandidate_RemoveMember(t *testing.T) {
 			}
 		}
 	}()
-	c.RunEventLoop(context.Background(), EventHandler{
-		OnPromote:   onPromote(c3, c),
-		OnDemote:    onDemote(c3, c),
-		OnNewLeader: onNewLeader(c3, c),
-	})
-}
-
-func TestCandidate_RegisterOnNewLeaderReceiver(t *testing.T) {
-	c := startCandidate(c3, true, c1, c2)
-	go func() {
-		time.Sleep(5 * time.Second)
-		if err := c.TransferLeader(); err != nil {
-			log.Println(err)
-		}
-	}()
-	go func() {
-		watcherId, ch := c.RegisterOnNewLeaderReceiver()
-		defer c.DeregisterOnNewLeaderReceiver(watcherId)
-		for address := range ch {
-			fmt.Println("from receiver:", "new leader address now is", address)
-		}
-	}()
-	c.RunEventLoop(context.Background(), EventHandler{
-		OnPromote:   onPromote(c3, c),
-		OnDemote:    onDemote(c3, c),
-		OnNewLeader: onNewLeader(c3, c),
-	})
+	time.Sleep(time.Hour)
 }
 
 func TestCandidate_Members(t *testing.T) {
 	c := startCandidate(c3, true, c1, c2)
-	err := c.Startup()
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	c.BootstrapCluster()
+	_ = c.RegisterEventHandler(EventHandler{
+		OnPromote:   onPromote(c3, c),
+		OnDemote:    onDemote(c3, c),
+		OnNewLeader: onNewLeader(c3, c),
+	})
 	leader, followers := c.Members()
 	log.Println(leader.ID, leader.Address)
 	for _, p := range followers {
 		log.Println(p.ID, p.Address)
 	}
+	time.Sleep(time.Hour)
+
 }

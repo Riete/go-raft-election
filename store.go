@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 
 	"github.com/hashicorp/raft"
-	raftdb "github.com/hashicorp/raft-boltdb"
+	raftdb "github.com/hashicorp/raft-boltdb/v2"
 )
 
 func createStore(f func() error, err error) error {

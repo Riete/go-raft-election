@@ -1,7 +1,6 @@
 package election
 
 import (
-	"context"
 	"slices"
 	"sync"
 	"time"
@@ -26,7 +25,8 @@ type Candidate struct {
 	promote   chan struct{}
 	demote    chan struct{}
 	newLeader chan raft.ServerAddress
-	shutdown  context.CancelFunc
+	shutdown  chan struct{}
+	handlers  map[int64]EventHandler
 }
 
 func (c *Candidate) Raft() *raft.Raft {
@@ -34,8 +34,6 @@ func (c *Candidate) Raft() *raft.Raft {
 }
 
 func (c *Candidate) init() error {
-	var ctx context.Context
-	ctx, c.shutdown = context.WithCancel(context.Background())
 	advertiseAddr, err := c.config.AdvertiseAddr()
 	if err != nil {
 		return err
@@ -54,12 +52,12 @@ func (c *Candidate) init() error {
 				select {
 				case becomeLeader := <-c.raft.LeaderCh():
 					if becomeLeader {
+						c.raft.Apply([]byte(c.config.AdvertiseAddress()), 5*time.Second)
 						c.promote <- struct{}{}
-						c.raft.Apply([]byte(c.config.AdvertiseAddress()), time.Second)
 					} else {
 						c.demote <- struct{}{}
 					}
-				case <-ctx.Done():
+				case <-c.shutdown:
 					return
 				}
 			}
@@ -69,11 +67,12 @@ func (c *Candidate) init() error {
 }
 
 func (c *Candidate) Startup() error {
+	c.shutdown = make(chan struct{})
 	return c.init()
 }
 
 func (c *Candidate) Shutdown() error {
-	c.shutdown()
+	close(c.shutdown)
 	return c.raft.Shutdown().Error()
 }
 
@@ -85,14 +84,6 @@ func (c *Candidate) BootstrapCluster() {
 
 func (c *Candidate) Leader() bool {
 	return c.raft.VerifyLeader().Error() == nil
-}
-
-func (c *Candidate) RegisterOnNewLeaderReceiver() (int64, chan raft.ServerAddress) {
-	return c.fsm.newReceiver()
-}
-
-func (c *Candidate) DeregisterOnNewLeaderReceiver(watcherId int64) {
-	c.fsm.removeReceiver(watcherId)
 }
 
 func (c *Candidate) Members() (leader raft.Server, followers []raft.Server) {
@@ -137,22 +128,48 @@ func (c *Candidate) TransferLeader() error {
 	return c.raft.LeadershipTransfer().Error()
 }
 
-func (c *Candidate) RunEventLoop(ctx context.Context, handler EventHandler) {
+func (c *Candidate) RegisterEventHandler(handler EventHandler) int64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	handlerId := time.Now().UnixNano()
+	c.handlers[handlerId] = handler
+	return handlerId
+}
+
+func (c *Candidate) RemoveEventHandler(handlerId int64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.handlers, handlerId)
+}
+
+func (c *Candidate) RunEventLoop() {
 	for {
 		select {
 		case <-c.promote:
-			if handler.OnPromote != nil {
-				handler.OnPromote()
+			c.mu.Lock()
+			for _, handler := range c.handlers {
+				if handler.OnPromote != nil {
+					go handler.OnPromote()
+				}
 			}
+			c.mu.Unlock()
 		case <-c.demote:
-			if handler.OnDemote != nil {
-				handler.OnDemote()
+			c.mu.Lock()
+			for _, handler := range c.handlers {
+				if handler.OnDemote != nil {
+					go handler.OnDemote()
+				}
 			}
+			c.mu.Unlock()
 		case newLeader := <-c.newLeader:
-			if handler.OnNewLeader != nil {
-				handler.OnNewLeader(newLeader)
+			c.mu.Lock()
+			for _, handler := range c.handlers {
+				if handler.OnNewLeader != nil {
+					go handler.OnNewLeader(newLeader)
+				}
 			}
-		case <-ctx.Done():
+			c.mu.Unlock()
+		case <-c.shutdown:
 			return
 		}
 	}
@@ -160,7 +177,7 @@ func (c *Candidate) RunEventLoop(ctx context.Context, handler EventHandler) {
 
 func NewCandidate(store *Store, config *Config, peers ...*Config) *Candidate {
 	newLeader := make(chan raft.ServerAddress)
-	return &Candidate{
+	c := &Candidate{
 		store:     store,
 		config:    config,
 		rc:        PeersConfig(append(peers, config)),
@@ -168,5 +185,8 @@ func NewCandidate(store *Store, config *Config, peers ...*Config) *Candidate {
 		promote:   make(chan struct{}),
 		demote:    make(chan struct{}),
 		newLeader: newLeader,
+		handlers:  make(map[int64]EventHandler),
 	}
+	go c.RunEventLoop()
+	return c
 }
