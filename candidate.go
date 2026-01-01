@@ -124,13 +124,13 @@ func (c *Candidate) Members() (leader raft.Server, followers []raft.Server) {
 func (c *Candidate) AddMember(config *Config) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.raft.AddVoter(config.ServerId, config.AdvertiseAddress(), 0, 0).Error()
+	return c.raft.AddVoter(config.ServerId, config.AdvertiseAddress(), 0, 5*time.Second).Error()
 }
 
 func (c *Candidate) RemoveMember(config *Config) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.raft.RemoveServer(config.ServerId, 0, 0).Error()
+	return c.raft.RemoveServer(config.ServerId, 0, 5*time.Second).Error()
 }
 
 func (c *Candidate) TransferLeader() error {
